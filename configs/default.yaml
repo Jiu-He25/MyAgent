@@ -1,0 +1,5 @@
+defaults:
+  task_config: configs/tasks/activation_function.yaml
+  llm_config: configs/llm_profiles.yaml
+  execution_config: configs/execution_local.yaml
+  safety_config: configs/safety.yaml

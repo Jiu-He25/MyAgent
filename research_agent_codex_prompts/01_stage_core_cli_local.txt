@@ -1,0 +1,337 @@
+你是 Codex，请基于下面的阶段需求实现一个“Research Agent 自动实验平台”。
+
+总目标：
+- 用户提供科研/实验 idea，系统自动完成计划、代码修改、实验运行、结果解析、评估、报告生成。
+- 第一类任务先支持机器学习小实验，例如“比较一个新激活函数是否优于 ReLU/GELU/SiLU”。
+- 不做 Web 前端，不做浏览器 UI。最终做桌面 App 形式。
+- 允许先 CLI 跑通，再逐步加入桌面 App。
+- LLM 使用 OpenAI-compatible API，优先兼容 Kimi/Moonshot API，但架构要能切换其他模型。
+- API Key 只能从环境变量读取，不能写死在代码里。
+- 支持本地执行和 SSH 远程执行，但先分阶段实现。
+
+核心设计原则：
+1. LLM 负责思考、规划、生成代码、分析、写报告。
+2. Executor 负责真实执行命令，本地/SSH/Docker 后续可以切换。
+3. Tools 负责文件、Shell、Git、日志、图表等能力。
+4. Workflow 负责阶段控制和循环。
+5. Safety 层负责路径、命令、预算、YOLO 权限限制。
+6. Storage 层负责实验历史、日志、artifact、checkpoint。
+7. Desktop App 只作为 UI，不要把业务逻辑写死在 UI 里。
+
+推荐技术栈：
+- Python 3.11+
+- pydantic v2
+- PyYAML
+- python-dotenv
+- openai SDK，用于 OpenAI-compatible API
+- typer + rich，用于 CLI
+- pytest，用于测试
+- paramiko 或 asyncssh，用于 SSH 阶段
+- SQLAlchemy + SQLite，用于存储阶段
+- pandas / matplotlib，用于日志分析和图表
+- PySide6，用于桌面 App 阶段
+
+仓库根目录建议：
+/
+├── README.md
+├── pyproject.toml
+├── .env.example
+├── configs/
+│   ├── default.yaml
+│   ├── safety.yaml
+│   ├── llm_profiles.yaml
+│   ├── execution_local.yaml
+│   ├── execution_ssh.yaml
+│   └── tasks/
+│       ├── activation_function.yaml
+│       ├── optimizer_ablation.yaml
+│       └── loss_function.yaml
+├── apps/
+│   ├── cli/
+│   │   └── main.py
+│   └── desktop/
+│       ├── main.py
+│       ├── windows/
+│       ├── widgets/
+│       ├── viewmodels/
+│       └── resources/
+├── research_agent/
+│   ├── core/
+│   ├── llm/
+│   ├── agents/
+│   ├── workflows/
+│   ├── tools/
+│   ├── executors/
+│   ├── experiments/
+│   ├── safety/
+│   ├── storage/
+│   └── templates/
+├── workspace/
+│   ├── repos/
+│   ├── runs/
+│   ├── logs/
+│   ├── artifacts/
+│   └── reports/
+├── scripts/
+└── tests/
+
+全局限制：
+- 不实现 Web 前端，不创建 React/Vue/Vite Web 项目。
+- 不把 API Key、SSH 密码、私钥内容写入代码或配置模板。
+- 不允许默认执行危险命令。
+- 任何自动执行命令都必须经过 SafetyPolicy。
+- 所有输出文件要写入 workspace/runs/<run_id>/ 下，便于复现。
+- 代码要模块化，不要写成一个大脚本。
+
+
+====================
+阶段 1：Core + CLI + 本地执行 MVP
+====================
+
+本阶段目标：
+实现一个可以在本地目录中运行的最小 Research Agent。用户通过 CLI 输入/指定配置，系统完成：
+1. 读取任务配置。
+2. 调用 PlannerAgent 生成实验计划。
+3. 允许用户确认 plan。
+4. 调用 CoderAgent 修改项目代码。
+5. 使用 LocalExecutor 执行实验命令。
+6. 调用 AnalyzerAgent 解析结果。
+7. 调用 ReviewerAgent 判断效果。
+8. 调用 ReporterAgent 生成 Markdown 报告。
+
+本阶段只需要本地执行，不需要 SSH，不需要数据库，不需要桌面 App。
+
+必须实现的目录：
+research_agent/
+├── core/
+│   ├── config.py
+│   ├── schemas.py
+│   ├── state.py
+│   ├── events.py
+│   ├── logger.py
+│   └── errors.py
+├── llm/
+│   ├── base.py
+│   ├── openai_compatible.py
+│   ├── router.py
+│   └── prompts/
+│       ├── planner.md
+│       ├── coder.md
+│       ├── analyzer.md
+│       ├── reviewer.md
+│       └── reporter.md
+├── agents/
+│   ├── base.py
+│   ├── planner_agent.py
+│   ├── coder_agent.py
+│   ├── analyzer_agent.py
+│   ├── reviewer_agent.py
+│   └── reporter_agent.py
+├── workflows/
+│   └── research_loop.py
+├── tools/
+│   ├── registry.py
+│   ├── file_tools.py
+│   ├── shell_tools.py
+│   ├── git_tools.py
+│   ├── log_tools.py
+│   ├── metric_tools.py
+│   └── plot_tools.py
+├── executors/
+│   ├── base.py
+│   └── local_executor.py
+├── experiments/
+│   ├── manager.py
+│   ├── runner.py
+│   ├── parser.py
+│   ├── comparator.py
+│   └── artifact_manager.py
+└── safety/
+    ├── permission.py
+    ├── command_filter.py
+    ├── path_guard.py
+    └── budget.py
+
+CLI：
+apps/cli/main.py
+
+CLI 命令示例：
+python -m apps.cli.main run \
+  --task-config configs/tasks/activation_function.yaml \
+  --llm-config configs/llm_profiles.yaml \
+  --execution-config configs/execution_local.yaml \
+  --safety-config configs/safety.yaml
+
+配置文件要求：
+1. configs/llm_profiles.yaml
+需要支持 planner、coder、analyzer、reviewer、reporter 五类 profile。现在都可以指向同一个 Kimi API。
+
+示例：
+llm_profiles:
+  planner:
+    provider: openai_compatible
+    model: kimi-k2-code
+    base_url: https://api.moonshot.cn/v1
+    api_key_env: KIMI_API_KEY
+    temperature: 0.2
+    max_tokens: 4096
+  coder:
+    provider: openai_compatible
+    model: kimi-k2-code
+    base_url: https://api.moonshot.cn/v1
+    api_key_env: KIMI_API_KEY
+    temperature: 0.0
+    max_tokens: 8192
+  analyzer:
+    provider: openai_compatible
+    model: kimi-k2-code
+    base_url: https://api.moonshot.cn/v1
+    api_key_env: KIMI_API_KEY
+    temperature: 0.0
+    max_tokens: 4096
+  reviewer:
+    provider: openai_compatible
+    model: kimi-k2-code
+    base_url: https://api.moonshot.cn/v1
+    api_key_env: KIMI_API_KEY
+    temperature: 0.0
+    max_tokens: 4096
+  reporter:
+    provider: openai_compatible
+    model: kimi-k2-code
+    base_url: https://api.moonshot.cn/v1
+    api_key_env: KIMI_API_KEY
+    temperature: 0.3
+    max_tokens: 8192
+
+2. configs/execution_local.yaml
+execution:
+  backend: local
+  local:
+    workspace_root: ./workspace
+    repo_path: ./workspace/repos/activation-exp
+    python_bin: python
+  environment:
+    CUDA_VISIBLE_DEVICES: "0"
+  limits:
+    command_timeout_seconds: 1800
+    max_parallel_jobs: 1
+    max_total_runtime_seconds: 14400
+
+3. configs/tasks/activation_function.yaml
+需要包含 idea、repo_path、baselines、new_method、seeds、metrics、decision 等字段。
+
+示例：
+task:
+  name: activation_function_test
+  type: ml_ablation
+idea: |
+  测试一个新的激活函数：
+  f(x) = x * sigmoid(1.5x) + 0.1 * tanh(x)
+  对比 ReLU、GELU、SiLU，看它在小型 CNN 上是否有优势。
+project:
+  repo_path: ./workspace/repos/activation-exp
+  entrypoint: train.py
+experiment:
+  dataset: CIFAR10
+  model: small_cnn
+  baselines: [relu, gelu, silu]
+  new_method:
+    name: my_activation
+    formula: "x * sigmoid(1.5*x) + 0.1 * tanh(x)"
+  seeds: [0, 1, 2]
+  metrics:
+    primary: val_accuracy
+    secondary: [train_loss, val_loss, training_time]
+decision:
+  min_improvement: 0.005
+  max_training_time_increase: 0.2
+  min_completed_seeds: 3
+  stop_after_no_improvement_rounds: 2
+modes:
+  plan_mode:
+    enabled: true
+    llm_profile: planner
+    require_human_approval: true
+  execution_mode:
+    name: controlled_yolo
+    llm_profile: coder
+    require_human_approval: false
+
+核心抽象：
+1. LLMClient
+- base.py 定义抽象类。
+- openai_compatible.py 实现 OpenAI-compatible client。
+- router.py 根据 profile 名称返回不同 client。
+
+2. Executor
+- base.py 定义 run/read_file/write_file/exists/list_dir/apply_patch 等接口。
+- local_executor.py 用 subprocess 和 pathlib 实现。
+
+3. ResearchState
+字段至少包含：
+- run_id
+- task_name
+- idea
+- repo_path
+- plan
+- code_changes
+- experiments
+- analysis
+- review
+- report_path
+- status
+- step
+- created_at
+
+4. Agent
+每个 Agent 封装 prompt + LLM 调用 + 输出解析。
+- PlannerAgent.plan(state) -> dict
+- CoderAgent.implement(state) -> dict
+- AnalyzerAgent.analyze(state) -> dict
+- ReviewerAgent.review(state) -> dict
+- ReporterAgent.report(state) -> str/report path
+
+5. ResearchWorkflow
+主流程：
+INIT -> SCAN_REPO -> PLAN -> PLAN_APPROVAL -> IMPLEMENT -> RUN_EXPERIMENTS -> ANALYZE -> REVIEW -> REPORT
+
+Plan Mode：
+- Planner 阶段不允许调用写文件/执行命令工具。
+- 只生成 JSON plan 和 Markdown plan。
+- 如果配置 require_human_approval=true，CLI 需要询问用户是否继续。
+
+Controlled YOLO：
+- Coder/Runner 阶段可以自动读写 workspace 内文件、执行允许命令。
+- 所有命令必须经过 SafetyPolicy。
+
+Safety：
+实现：
+- PathGuard：禁止访问 workspace 之外路径，除非配置允许。
+- CommandFilter：禁止 sudo、rm -rf /、mkfs、shutdown、reboot、dd if=、curl | sh、wget | sh 等命令。
+- Budget：限制最大命令运行时间、最大实验数量。
+
+实验运行：
+- ExperimentRunner 根据 plan 中的 experiments 列表执行命令。
+- 每个实验 stdout/stderr 保存到 workspace/runs/<run_id>/logs/。
+- 尝试解析 metrics.json、metrics.csv 或日志中的 key=value 指标。
+- 每个实验记录 method、seed、command、exit_code、status、metrics。
+
+报告：
+- 输出 workspace/runs/<run_id>/reports/experiment_report.md
+- 包含 idea、plan、代码改动摘要、实验设置、结果表格、Reviewer 判断、后续建议。
+
+验收标准：
+1. 可以运行 CLI 命令启动一次本地任务。
+2. 可以读取 Kimi/OpenAI-compatible API Key。
+3. 如果没有 API Key，给出清晰错误信息。
+4. Planner 可以生成 plan 文件。
+5. 用户确认后可以执行实验命令。
+6. 所有日志和报告都保存在 workspace/runs/<run_id>/。
+7. 命令执行前必须经过 SafetyPolicy。
+8. pytest 至少覆盖：LLMRouter 配置解析、LocalExecutor、SafetyPolicy、ResearchWorkflow 的空跑/假 LLM 测试。
+
+实现建议：
+- 为测试提供 FakeLLMClient，避免测试依赖真实 API。
+- 可以先让 CoderAgent 生成 patch 文本，再由 apply_patch 工具应用。
+- 如果项目代码结构未知，Planner/Coder 先调用文件扫描摘要，不要读取整个仓库。

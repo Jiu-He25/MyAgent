@@ -1,0 +1,35 @@
+task:
+  name: activation_function_test
+  type: ml_ablation
+idea: |
+  Test a new activation function:
+  f(x) = x * sigmoid(1.5*x) + 0.1 * tanh(x)
+  Compare it with ReLU, GELU, and SiLU on a small CNN-style toy experiment.
+project:
+  repo_path: ./workspace/repos/activation-exp
+  entrypoint: train.py
+experiment:
+  dataset: CIFAR10
+  model: small_cnn
+  baselines: [relu, gelu, silu]
+  new_method:
+    name: my_activation
+    formula: "x * sigmoid(1.5*x) + 0.1 * tanh(x)"
+  seeds: [0, 1, 2]
+  metrics:
+    primary: val_accuracy
+    secondary: [train_loss, val_loss, training_time]
+decision:
+  min_improvement: 0.005
+  max_training_time_increase: 0.2
+  min_completed_seeds: 3
+  stop_after_no_improvement_rounds: 2
+modes:
+  plan_mode:
+    enabled: true
+    llm_profile: planner
+    require_human_approval: true
+  execution_mode:
+    name: controlled_yolo
+    llm_profile: coder
+    require_human_approval: false

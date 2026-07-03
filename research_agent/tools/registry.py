@@ -1,0 +1,3 @@
+"""Tool registry placeholder."""
+
+TOOLS = {}

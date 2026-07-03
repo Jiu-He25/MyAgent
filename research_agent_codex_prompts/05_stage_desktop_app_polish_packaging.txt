@@ -1,0 +1,286 @@
+你是 Codex，请基于下面的阶段需求实现一个“Research Agent 自动实验平台”。
+
+总目标：
+- 用户提供科研/实验 idea，系统自动完成计划、代码修改、实验运行、结果解析、评估、报告生成。
+- 第一类任务先支持机器学习小实验，例如“比较一个新激活函数是否优于 ReLU/GELU/SiLU”。
+- 不做 Web 前端，不做浏览器 UI。最终做桌面 App 形式。
+- 允许先 CLI 跑通，再逐步加入桌面 App。
+- LLM 使用 OpenAI-compatible API，优先兼容 Kimi/Moonshot API，但架构要能切换其他模型。
+- API Key 只能从环境变量读取，不能写死在代码里。
+- 支持本地执行和 SSH 远程执行，但先分阶段实现。
+
+核心设计原则：
+1. LLM 负责思考、规划、生成代码、分析、写报告。
+2. Executor 负责真实执行命令，本地/SSH/Docker 后续可以切换。
+3. Tools 负责文件、Shell、Git、日志、图表等能力。
+4. Workflow 负责阶段控制和循环。
+5. Safety 层负责路径、命令、预算、YOLO 权限限制。
+6. Storage 层负责实验历史、日志、artifact、checkpoint。
+7. Desktop App 只作为 UI，不要把业务逻辑写死在 UI 里。
+
+推荐技术栈：
+- Python 3.11+
+- pydantic v2
+- PyYAML
+- python-dotenv
+- openai SDK，用于 OpenAI-compatible API
+- typer + rich，用于 CLI
+- pytest，用于测试
+- paramiko 或 asyncssh，用于 SSH 阶段
+- SQLAlchemy + SQLite，用于存储阶段
+- pandas / matplotlib，用于日志分析和图表
+- PySide6，用于桌面 App 阶段
+
+仓库根目录建议：
+research-agent/
+├── README.md
+├── pyproject.toml
+├── .env.example
+├── configs/
+│   ├── default.yaml
+│   ├── safety.yaml
+│   ├── llm_profiles.yaml
+│   ├── execution_local.yaml
+│   ├── execution_ssh.yaml
+│   └── tasks/
+│       ├── activation_function.yaml
+│       ├── optimizer_ablation.yaml
+│       └── loss_function.yaml
+├── apps/
+│   ├── cli/
+│   │   └── main.py
+│   └── desktop/
+│       ├── main.py
+│       ├── windows/
+│       ├── widgets/
+│       ├── viewmodels/
+│       └── resources/
+├── research_agent/
+│   ├── core/
+│   ├── llm/
+│   ├── agents/
+│   ├── workflows/
+│   ├── tools/
+│   ├── executors/
+│   ├── experiments/
+│   ├── safety/
+│   ├── storage/
+│   └── templates/
+├── workspace/
+│   ├── repos/
+│   ├── runs/
+│   ├── logs/
+│   ├── artifacts/
+│   └── reports/
+├── scripts/
+└── tests/
+
+全局限制：
+- 不实现 Web 前端，不创建 React/Vue/Vite Web 项目。
+- 不把 API Key、SSH 密码、私钥内容写入代码或配置模板。
+- 不允许默认执行危险命令。
+- 任何自动执行命令都必须经过 SafetyPolicy。
+- 所有输出文件要写入 workspace/runs/<run_id>/ 下，便于复现。
+- 代码要模块化，不要写成一个大脚本。
+
+
+====================
+阶段 5：桌面 App 完善、插件化任务模板、打包发布
+====================
+
+前置条件：
+阶段 1-4 已完成。桌面 App MVP 能创建、运行、查看实验。
+
+本阶段目标：
+把项目从 MVP 完善成可长期使用的桌面 Research Agent App。重点是：体验优化、插件化扩展、任务模板、配置管理、报告导出、打包发布。
+
+不做 Web 前端。
+
+一、任务模板系统
+新增目录：
+research_agent/task_templates/
+├── base.py
+├── activation_function.py
+├── optimizer_ablation.py
+├── loss_function.py
+└── registry.py
+
+每个 TaskTemplate 需要定义：
+- template_id
+- display_name
+- required_fields
+- default_config
+- planner_prompt_addon
+- expected_artifacts
+- metric_schema
+- validation_rules
+
+第一批模板：
+1. ActivationFunctionTemplate
+输入：formula、method_name、baselines、dataset、model、seeds。
+
+2. OptimizerAblationTemplate
+输入：new_optimizer_description、baselines，例如 SGD/Adam/AdamW。
+
+3. LossFunctionTemplate
+输入：new_loss_formula/description、baselines，例如 CE/Focal。
+
+App 中 NewRunDialog 根据模板动态生成表单。
+
+二、LLM Profile 管理优化
+Settings 中支持：
+- 新增 profile
+- 复制 profile
+- 测试连接
+- 选择默认 planner/coder/analyzer/reviewer/reporter
+- 支持同一个 Kimi API Key 给多个角色使用
+- 支持不同角色使用不同 API
+
+配置仍然保存为 YAML，不保存明文 Key。
+
+三、Execution Profile 管理优化
+支持多个执行环境：
+- Local GPU
+- Local CPU
+- SSH GPU server A
+- SSH GPU server B
+
+每个 profile 包含：
+- backend
+- workspace_root
+- repo_path/remote_repo_path
+- python_bin
+- CUDA_VISIBLE_DEVICES
+- command timeout
+- max runtime
+- max parallel jobs
+
+App 中可以测试环境：
+- python --version
+- nvidia-smi，可失败但要显示信息
+- repo path exists
+- git status
+
+四、安全策略可视化
+Settings 中展示 safety.yaml：
+- allowed_workspace_roots
+- forbidden_paths
+- forbidden_commands
+- allowed_commands_prefix
+- max_file_write_mb
+- max_command_timeout_seconds
+
+允许 UI 编辑，但保存前需要校验。
+禁止用户把 allowed_workspace_roots 设置成 /。
+
+五、Run Dashboard
+主界面增强：
+- run 状态颜色：created/running/paused/success/failed/cancelled。
+- 按任务类型、日期、状态过滤。
+- 展示每个 run 的 best metric、decision、runtime。
+- 支持删除 run 记录，但删除前确认；默认只删除数据库记录，不删除 artifact 文件，除非用户勾选。
+
+六、实时图表和结果可视化
+MetricsTable 增强：
+- method 聚合 mean/std/count。
+- baseline vs new method 对比。
+- 高亮 best method。
+
+PlotViewer：
+- 显示 plots 目录下 png。
+- 支持打开系统文件管理器定位。
+
+Analyzer 自动生成：
+- metric_summary.csv
+- comparison_table.md
+- primary_metric_bar.png
+- loss_curve.png，如果日志有 curve 数据。
+
+七、报告导出
+Reporter 支持：
+- Markdown report
+- LaTeX draft，可选
+- PDF 可选，如果本地有 pandoc 或 latexmk，否则跳过并提示
+- 导出整个 run 为 zip
+
+ArtifactManager 增加：
+- export_run_zip(run_id, output_path)
+
+zip 包含：
+- config snapshot
+- plan
+- code diff
+- logs
+- metrics
+- plots
+- report
+- review
+
+八、Prompt 编辑器
+App 增加 Prompt Settings：
+- 查看 planner.md/coder.md/analyzer.md/reviewer.md/reporter.md
+- 允许复制为自定义 prompt profile
+- 不直接覆盖默认 prompt，避免升级冲突
+
+九、插件化工具注册
+ToolRegistry 支持通过配置启用/禁用工具：
+tools:
+  file_tools: true
+  shell_tools: true
+  git_tools: true
+  ssh_tools: true
+  python_tools: true
+  web_search_tools: false
+
+第一版不需要实现 web_search_tools。
+
+十、打包发布
+支持 PyInstaller：
+- scripts/build_desktop.py
+- 生成 dist/research-agent-app
+- 包含默认 configs 和 templates
+- 不包含 .env
+- README 写清楚如何配置环境变量和 Kimi API Key
+
+打包命令示例：
+python scripts/build_desktop.py
+
+十一、文档
+补充：
+- README.md 快速开始
+- docs/architecture.md
+- docs/configuration.md
+- docs/local_execution.md
+- docs/ssh_execution.md
+- docs/desktop_app.md
+- docs/safety.md
+- docs/task_templates.md
+
+十二、质量要求
+测试：
+- 单元测试覆盖配置、模板注册、executor factory、storage、artifact export。
+- App 的核心 service 层要可测试，不强依赖 Qt。
+- UI 层可以少量 smoke test。
+
+日志：
+- 所有 run 级日志写入 workspace/runs/<run_id>/logs/system.log。
+- App 错误写入 workspace/app.log。
+
+用户体验：
+- API Key 不存在时，在 App 中明确提示“请在 .env 中设置 KIMI_API_KEY”。
+- SSH 连接失败时显示 host、port、username、错误原因。
+- 命令被 SafetyPolicy 拦截时显示被拦截的原因。
+- 实验失败时仍然生成 failure report，说明失败在哪一步。
+
+验收标准：
+1. 桌面 App 可用于创建、运行、停止、查看历史 run。
+2. 支持多个 LLM profile，并能在不同 Agent 角色中选择。
+3. 支持多个 execution profile，本地和 SSH 都能配置。
+4. 支持至少 3 个任务模板：activation、optimizer、loss。
+5. 支持导出 run zip。
+6. 支持 PyInstaller 打包。
+7. 文档能让新用户在 10 分钟内配置 Kimi API Key 并跑一个本地 demo。
+8. 不包含 Web 前端。
+
+最终产品定位：
+一个桌面 Research Agent App。用户提供 idea 和项目目录，App 通过 Kimi/OpenAI-compatible LLM 规划实验、修改代码、执行本地/远程实验、分析结果并生成报告。

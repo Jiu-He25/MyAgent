@@ -1,0 +1,313 @@
+你是 Codex，请基于下面的阶段需求实现一个“Research Agent 自动实验平台”。
+
+总目标：
+- 用户提供科研/实验 idea，系统自动完成计划、代码修改、实验运行、结果解析、评估、报告生成。
+- 第一类任务先支持机器学习小实验，例如“比较一个新激活函数是否优于 ReLU/GELU/SiLU”。
+- 不做 Web 前端，不做浏览器 UI。最终做桌面 App 形式。
+- 允许先 CLI 跑通，再逐步加入桌面 App。
+- LLM 使用 OpenAI-compatible API，优先兼容 Kimi/Moonshot API，但架构要能切换其他模型。
+- API Key 只能从环境变量读取，不能写死在代码里。
+- 支持本地执行和 SSH 远程执行，但先分阶段实现。
+
+核心设计原则：
+1. LLM 负责思考、规划、生成代码、分析、写报告。
+2. Executor 负责真实执行命令，本地/SSH/Docker 后续可以切换。
+3. Tools 负责文件、Shell、Git、日志、图表等能力。
+4. Workflow 负责阶段控制和循环。
+5. Safety 层负责路径、命令、预算、YOLO 权限限制。
+6. Storage 层负责实验历史、日志、artifact、checkpoint。
+7. Desktop App 只作为 UI，不要把业务逻辑写死在 UI 里。
+
+推荐技术栈：
+- Python 3.11+
+- pydantic v2
+- PyYAML
+- python-dotenv
+- openai SDK，用于 OpenAI-compatible API
+- typer + rich，用于 CLI
+- pytest，用于测试
+- paramiko 或 asyncssh，用于 SSH 阶段
+- SQLAlchemy + SQLite，用于存储阶段
+- pandas / matplotlib，用于日志分析和图表
+- PySide6，用于桌面 App 阶段
+
+仓库根目录建议：
+research-agent/
+├── README.md
+├── pyproject.toml
+├── .env.example
+├── configs/
+│   ├── default.yaml
+│   ├── safety.yaml
+│   ├── llm_profiles.yaml
+│   ├── execution_local.yaml
+│   ├── execution_ssh.yaml
+│   └── tasks/
+│       ├── activation_function.yaml
+│       ├── optimizer_ablation.yaml
+│       └── loss_function.yaml
+├── apps/
+│   ├── cli/
+│   │   └── main.py
+│   └── desktop/
+│       ├── main.py
+│       ├── windows/
+│       ├── widgets/
+│       ├── viewmodels/
+│       └── resources/
+├── research_agent/
+│   ├── core/
+│   ├── llm/
+│   ├── agents/
+│   ├── workflows/
+│   ├── tools/
+│   ├── executors/
+│   ├── experiments/
+│   ├── safety/
+│   ├── storage/
+│   └── templates/
+├── workspace/
+│   ├── repos/
+│   ├── runs/
+│   ├── logs/
+│   ├── artifacts/
+│   └── reports/
+├── scripts/
+└── tests/
+
+全局限制：
+- 不实现 Web 前端，不创建 React/Vue/Vite Web 项目。
+- 不把 API Key、SSH 密码、私钥内容写入代码或配置模板。
+- 不允许默认执行危险命令。
+- 任何自动执行命令都必须经过 SafetyPolicy。
+- 所有输出文件要写入 workspace/runs/<run_id>/ 下，便于复现。
+- 代码要模块化，不要写成一个大脚本。
+
+
+====================
+阶段 3：Storage、Checkpoint、Artifact、可恢复实验历史
+====================
+
+前置条件：
+阶段 1 和阶段 2 已完成。本地/SSH 都能跑。
+
+本阶段目标：
+把实验过程从“只输出一堆文件”升级为“可追踪、可恢复、可复现”的实验系统。加入 SQLite 数据库、checkpoint、artifact 管理和 run history。
+
+必须实现：
+research_agent/storage/
+├── db.py
+├── models.py
+├── repositories.py
+└── migrations.py 或 init_db.py
+
+research_agent/workflows/checkpoints.py
+research_agent/experiments/artifact_manager.py 增强
+research_agent/experiments/comparator.py 增强
+research_agent/core/events.py 增强
+
+推荐依赖：
+- SQLAlchemy 2.x
+- SQLite
+- pandas
+- matplotlib
+
+数据库表设计：
+1. runs
+字段：
+- id / run_id
+- task_name
+- task_type
+- idea
+- status
+- current_step
+- execution_backend
+- workspace_path
+- config_snapshot_path
+- report_path
+- created_at
+- updated_at
+- finished_at
+- error_message
+
+2. experiments
+字段：
+- experiment_id
+- run_id
+- method
+- seed
+- command
+- status
+- exit_code
+- cwd
+- started_at
+- finished_at
+- stdout_path
+- stderr_path
+- metrics_path
+- runtime_seconds
+
+3. metrics
+字段：
+- id
+- experiment_id
+- key
+- value
+- step 可选
+- source_path
+
+4. artifacts
+字段：
+- artifact_id
+- run_id
+- experiment_id 可空
+- artifact_type: log/metric/plot/report/patch/config/checkpoint
+- name
+- path
+- created_at
+- metadata_json
+
+5. tool_calls
+字段：
+- tool_call_id
+- run_id
+- agent_name
+- tool_name
+- arguments_json
+- result_json
+- status
+- created_at
+
+6. messages
+字段：
+- message_id
+- run_id
+- agent_name
+- role
+- content
+- created_at
+
+7. code_patches
+字段：
+- patch_id
+- run_id
+- changed_files_json
+- diff_path
+- summary
+- created_at
+
+8. reviews
+字段：
+- review_id
+- run_id
+- decision: continue/stop_success/stop_failure/needs_human_review
+- score
+- reason
+- next_actions_json
+- created_at
+
+Checkpoint 设计：
+- 每个 workflow step 结束后写 checkpoint。
+- checkpoint 保存 ResearchState 的 JSON 快照。
+- 路径：workspace/runs/<run_id>/checkpoints/<step_name>_<timestamp>.json
+- 数据库 artifacts 表记录 checkpoint。
+- CLI 支持 resume：
+  python -m apps.cli.main resume --run-id <run_id>
+
+ArtifactManager 负责：
+- 为每个 run 创建标准目录：
+  workspace/runs/<run_id>/
+  ├── config/
+  ├── checkpoints/
+  ├── logs/
+  ├── metrics/
+  ├── plots/
+  ├── reports/
+  ├── patches/
+  └── messages/
+- 保存 config snapshot，保证复现。
+- 记录所有输出文件到 DB。
+- 提供 get_artifacts(run_id) 查询。
+
+指标解析：
+增强 MetricParser：
+- 支持 metrics.json。
+- 支持 metrics.csv。
+- 支持从 stdout 中解析形如 val_accuracy=0.91、val_loss: 0.5 的指标。
+- 允许 task config 指定 primary metric。
+
+Comparator：
+需要实现规则化判断，不要完全靠 LLM。
+输入：实验结果列表、baseline 列表、新方法、decision config。
+输出：结构化 analysis。
+
+比较规则示例：
+- 对每个 method 聚合多个 seed：mean/std/count。
+- 找到 best_baseline。
+- 计算 new_method_mean - best_baseline_mean。
+- 判断是否满足 min_improvement。
+- 判断训练时间增幅是否超过 max_training_time_increase。
+- 判断 completed seed 数是否达到 min_completed_seeds。
+
+输出示例：
+{
+  "primary_metric": "val_accuracy",
+  "best_baseline": "silu",
+  "best_baseline_mean": 0.842,
+  "new_method": "my_activation",
+  "new_method_mean": 0.849,
+  "improvement": 0.007,
+  "training_time_increase": 0.13,
+  "completed_seeds": 3,
+  "rule_based_success": true,
+  "tables": [...]
+}
+
+ReviewerAgent：
+- 输入 Comparator 的结构化结果。
+- LLM 只能解释和给建议，不能覆盖硬性规则。
+- 如果 rule_based_success=false，但 LLM 说成功，最终 decision 仍然不能直接 stop_success，最多 needs_human_review。
+
+事件系统：
+实现 Event 类，用于 CLI 和后续桌面 App 监听。
+事件类型：
+- RUN_STARTED
+- STEP_STARTED
+- STEP_FINISHED
+- PLAN_CREATED
+- PLAN_APPROVAL_REQUIRED
+- COMMAND_STARTED
+- COMMAND_FINISHED
+- METRICS_PARSED
+- REVIEW_CREATED
+- REPORT_CREATED
+- RUN_FINISHED
+- RUN_FAILED
+
+Workflow 需要 yield 或 publish events。
+这样阶段 4 的桌面 App 可以显示实时日志，而不用改 workflow。
+
+CLI 增强：
+- list-runs：列出历史任务。
+- show-run <run_id>：显示状态、报告路径、实验摘要。
+- resume <run_id>：从 checkpoint 恢复。
+- artifacts <run_id>：列出 artifact。
+
+示例：
+python -m apps.cli.main list-runs
+python -m apps.cli.main show-run 20260703_abc123
+python -m apps.cli.main resume --run-id 20260703_abc123
+
+验收标准：
+1. 每次运行都有唯一 run_id。
+2. 所有配置会快照到 run 目录。
+3. 每个实验、指标、日志、报告都能在 SQLite 中查到。
+4. 中断后可以通过 resume 继续，至少能从最近 checkpoint 读回状态。
+5. CLI 可以查看历史 run 和 artifact。
+6. Comparator 能对多个 seed 的 baseline/new_method 计算均值和差异。
+7. pytest 覆盖 Storage、ArtifactManager、MetricParser、Comparator、Checkpoint。
+
+本阶段不要做：
+- 不做桌面 App。
+- 不做 Web。
+- 不要求复杂可视化，只需要生成基础 png 曲线和 markdown 表格。

@@ -1,0 +1,12 @@
+execution:
+  backend: local
+  local:
+    workspace_root: ./workspace
+    repo_path: ./workspace/repos/activation-exp
+    python_bin: python
+  environment:
+    CUDA_VISIBLE_DEVICES: "0"
+  limits:
+    command_timeout_seconds: 1800
+    max_parallel_jobs: 1
+    max_total_runtime_seconds: 14400

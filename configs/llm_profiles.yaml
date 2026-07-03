@@ -1,0 +1,36 @@
+llm_profiles:
+  planner:
+    provider: openai_compatible
+    model: kimi-k2-code
+    base_url: https://api.moonshot.cn/v1
+    api_key_env: KIMI_API_KEY
+    temperature: 0.2
+    max_tokens: 4096
+  coder:
+    provider: openai_compatible
+    model: kimi-k2-code
+    base_url: https://api.moonshot.cn/v1
+    api_key_env: KIMI_API_KEY
+    temperature: 0.0
+    max_tokens: 8192
+  analyzer:
+    provider: openai_compatible
+    model: kimi-k2-code
+    base_url: https://api.moonshot.cn/v1
+    api_key_env: KIMI_API_KEY
+    temperature: 0.0
+    max_tokens: 4096
+  reviewer:
+    provider: openai_compatible
+    model: kimi-k2-code
+    base_url: https://api.moonshot.cn/v1
+    api_key_env: KIMI_API_KEY
+    temperature: 0.0
+    max_tokens: 4096
+  reporter:
+    provider: openai_compatible
+    model: kimi-k2-code
+    base_url: https://api.moonshot.cn/v1
+    api_key_env: KIMI_API_KEY
+    temperature: 0.3
+    max_tokens: 8192

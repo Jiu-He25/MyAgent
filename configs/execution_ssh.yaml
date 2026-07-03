@@ -1,0 +1,4 @@
+execution:
+  backend: ssh
+  enabled: false
+  note: SSH execution is reserved for Stage 2.

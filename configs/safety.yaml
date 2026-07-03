@@ -1,0 +1,18 @@
+safety:
+  allowed_roots:
+    - ./workspace
+  denied_commands:
+    - sudo
+    - "rm -rf /"
+    - mkfs
+    - shutdown
+    - reboot
+    - "dd if="
+    - "curl | sh"
+    - "curl -s | sh"
+    - "wget | sh"
+    - "wget -q | sh"
+  budgets:
+    max_command_timeout_seconds: 1800
+    max_experiments: 50
+    max_total_runtime_seconds: 14400

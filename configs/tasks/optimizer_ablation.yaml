@@ -1,0 +1,32 @@
+task:
+  name: optimizer_ablation
+  type: ml_ablation
+idea: Compare Adam, AdamW, and SGD on a small local training script.
+project:
+  repo_path: ./workspace/repos/activation-exp
+  entrypoint: train.py
+experiment:
+  dataset: toy
+  model: small_mlp
+  baselines: [adam, adamw]
+  new_method:
+    name: sgd
+    formula: "sgd with momentum"
+  seeds: [0]
+  metrics:
+    primary: val_accuracy
+    secondary: [train_loss, val_loss, training_time]
+decision:
+  min_improvement: 0.005
+  max_training_time_increase: 0.2
+  min_completed_seeds: 1
+  stop_after_no_improvement_rounds: 1
+modes:
+  plan_mode:
+    enabled: true
+    llm_profile: planner
+    require_human_approval: true
+  execution_mode:
+    name: controlled_yolo
+    llm_profile: coder
+    require_human_approval: false

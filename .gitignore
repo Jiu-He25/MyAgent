@@ -1,0 +1,10 @@
+.venv/
+.env
+.pytest_cache/
+__pycache__/
+*.py[cod]
+workspace/runs/
+workspace/logs/
+workspace/artifacts/
+workspace/reports/
+workspace/repos/

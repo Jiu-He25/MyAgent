@@ -1,0 +1,251 @@
+你是 Codex，请基于下面的阶段需求实现一个“Research Agent 自动实验平台”。
+
+总目标：
+- 用户提供科研/实验 idea，系统自动完成计划、代码修改、实验运行、结果解析、评估、报告生成。
+- 第一类任务先支持机器学习小实验，例如“比较一个新激活函数是否优于 ReLU/GELU/SiLU”。
+- 不做 Web 前端，不做浏览器 UI。最终做桌面 App 形式。
+- 允许先 CLI 跑通，再逐步加入桌面 App。
+- LLM 使用 OpenAI-compatible API，优先兼容 Kimi/Moonshot API，但架构要能切换其他模型。
+- API Key 只能从环境变量读取，不能写死在代码里。
+- 支持本地执行和 SSH 远程执行，但先分阶段实现。
+
+核心设计原则：
+1. LLM 负责思考、规划、生成代码、分析、写报告。
+2. Executor 负责真实执行命令，本地/SSH/Docker 后续可以切换。
+3. Tools 负责文件、Shell、Git、日志、图表等能力。
+4. Workflow 负责阶段控制和循环。
+5. Safety 层负责路径、命令、预算、YOLO 权限限制。
+6. Storage 层负责实验历史、日志、artifact、checkpoint。
+7. Desktop App 只作为 UI，不要把业务逻辑写死在 UI 里。
+
+推荐技术栈：
+- Python 3.11+
+- pydantic v2
+- PyYAML
+- python-dotenv
+- openai SDK，用于 OpenAI-compatible API
+- typer + rich，用于 CLI
+- pytest，用于测试
+- paramiko 或 asyncssh，用于 SSH 阶段
+- SQLAlchemy + SQLite，用于存储阶段
+- pandas / matplotlib，用于日志分析和图表
+- PySide6，用于桌面 App 阶段
+
+仓库根目录建议：
+research-agent/
+├── README.md
+├── pyproject.toml
+├── .env.example
+├── configs/
+│   ├── default.yaml
+│   ├── safety.yaml
+│   ├── llm_profiles.yaml
+│   ├── execution_local.yaml
+│   ├── execution_ssh.yaml
+│   └── tasks/
+│       ├── activation_function.yaml
+│       ├── optimizer_ablation.yaml
+│       └── loss_function.yaml
+├── apps/
+│   ├── cli/
+│   │   └── main.py
+│   └── desktop/
+│       ├── main.py
+│       ├── windows/
+│       ├── widgets/
+│       ├── viewmodels/
+│       └── resources/
+├── research_agent/
+│   ├── core/
+│   ├── llm/
+│   ├── agents/
+│   ├── workflows/
+│   ├── tools/
+│   ├── executors/
+│   ├── experiments/
+│   ├── safety/
+│   ├── storage/
+│   └── templates/
+├── workspace/
+│   ├── repos/
+│   ├── runs/
+│   ├── logs/
+│   ├── artifacts/
+│   └── reports/
+├── scripts/
+└── tests/
+
+全局限制：
+- 不实现 Web 前端，不创建 React/Vue/Vite Web 项目。
+- 不把 API Key、SSH 密码、私钥内容写入代码或配置模板。
+- 不允许默认执行危险命令。
+- 任何自动执行命令都必须经过 SafetyPolicy。
+- 所有输出文件要写入 workspace/runs/<run_id>/ 下，便于复现。
+- 代码要模块化，不要写成一个大脚本。
+
+
+====================
+阶段 4：桌面 App MVP，无 Web
+====================
+
+前置条件：
+阶段 1-3 已完成。CLI、本地/SSH、Storage、Checkpoint 都能跑。
+
+本阶段目标：
+实现一个桌面 App MVP，用 PySide6 做 GUI。不做 Web，不做 React/Vue，不做浏览器页面。App 直接调用 research_agent 的 Python 核心模块，通过事件系统实时展示运行状态。
+
+App 目标：
+用户可以在桌面界面中：
+1. 新建实验任务。
+2. 选择本地或 SSH 执行配置。
+3. 选择 LLM profiles。
+4. 输入 idea。
+5. 查看 Planner 生成的 plan。
+6. 确认 plan 后开始 controlled_yolo 执行。
+7. 实时查看日志和当前步骤。
+8. 查看实验结果表格、图表和报告。
+9. 停止任务。
+10. 查看历史 runs。
+
+目录：
+apps/desktop/
+├── main.py
+├── app.py
+├── windows/
+│   ├── main_window.py
+│   ├── new_run_dialog.py
+│   ├── settings_window.py
+│   └── plan_review_dialog.py
+├── widgets/
+│   ├── run_list_widget.py
+│   ├── run_detail_widget.py
+│   ├── log_viewer.py
+│   ├── metrics_table.py
+│   ├── artifact_browser.py
+│   ├── report_viewer.py
+│   └── config_editor.py
+├── viewmodels/
+│   ├── run_viewmodel.py
+│   ├── settings_viewmodel.py
+│   └── event_bridge.py
+└── resources/
+    └── app.qss
+
+技术要求：
+- 使用 PySide6。
+- Workflow 在后台线程或 worker 中运行，不能阻塞 UI。
+- UI 通过事件队列/信号槽接收 RUN_STARTED、STEP_STARTED、COMMAND_STARTED 等事件。
+- 不要在 UI 里直接写实验逻辑。
+- UI 调用 ApplicationService，ApplicationService 调用 workflow/storage。
+
+新增模块建议：
+research_agent/services/
+├── app_service.py
+├── run_service.py
+├── config_service.py
+└── settings_service.py
+
+AppService 负责：
+- create_run(config)
+- start_run(run_id)
+- stop_run(run_id)
+- resume_run(run_id)
+- list_runs()
+- get_run_detail(run_id)
+- get_artifacts(run_id)
+- get_report(run_id)
+
+主窗口布局：
+左侧：Run 列表。
+中间：当前 Run 的步骤、状态、实验表格。
+右侧或底部：实时日志。
+顶部工具栏：New Run、Start、Stop、Resume、Settings。
+底部状态栏：当前 LLM profile、执行 backend、工作目录。
+
+页面/组件：
+1. NewRunDialog
+字段：
+- task name
+- idea 多行文本
+- task template 下拉，例如 activation_function
+- repo_path
+- execution backend: local / ssh
+- llm profile group
+- plan_mode enabled
+- require plan approval
+- controlled_yolo enabled
+- max experiments
+- max runtime
+
+2. PlanReviewDialog
+显示：
+- Markdown plan
+- JSON plan
+按钮：
+- Approve and Run
+- Reject
+- Edit Prompt/Config
+
+3. LogViewer
+- 显示事件日志和 stdout/stderr。
+- 支持按 step 过滤。
+- 支持清空视图但不删除文件。
+
+4. MetricsTable
+- 显示 method、seed、primary metric、loss、training_time、status。
+- 显示 baseline mean/std、新方法 mean/std、improvement。
+
+5. ArtifactBrowser
+- 列出 logs、plots、reports、patches、config snapshot。
+- 点击报告可以在 ReportViewer 中打开。
+- 点击文件可以用系统默认程序打开。
+
+6. ReportViewer
+- 先支持 Markdown 纯文本预览。
+- 可选支持简单 Markdown 渲染。
+
+SettingsWindow：
+- LLM profiles 管理：model、base_url、api_key_env、temperature。
+- Execution profiles 管理：local repo path、ssh host、username、key_path、remote repo path。
+- Safety policy 查看和编辑。
+- 不允许用户输入明文 API Key 到配置文件；只允许设置环境变量名称，或提醒用户在 .env 中配置。
+
+.env 读取：
+- App 启动时读取 .env。
+- .env.example 包含：
+  KIMI_API_KEY=
+  DEEPSEEK_API_KEY=
+  OPENAI_API_KEY=
+- 真实 .env 加入 .gitignore。
+
+后台运行：
+实现 RunWorker：
+- 在 QThread 中启动 ResearchWorkflow。
+- Workflow publish events。
+- EventBridge 把 Python event 转成 Qt signal。
+- Stop 按钮设置 cancellation token。
+- Workflow 每个 step 和每个 command 前检查 cancellation token。
+
+Plan approval：
+- 如果 plan_mode.require_human_approval=true，Workflow 发出 PLAN_APPROVAL_REQUIRED 事件后暂停。
+- UI 弹出 PlanReviewDialog。
+- 用户点击 Approve 后 workflow 继续。
+- 用户 Reject 后 run 状态变为 cancelled/rejected。
+
+验收标准：
+1. 可以通过 python -m apps.desktop.main 启动桌面 App。
+2. 可以在 UI 创建一个本地 run。
+3. Planner 生成 plan 后 UI 能展示并等待用户确认。
+4. 用户确认后后台执行，不冻结 UI。
+5. 实时日志能显示当前 step 和 command 输出。
+6. 任务完成后能在 UI 查看报告和 artifact。
+7. 可以查看历史 runs。
+8. Stop 按钮能停止未完成任务，状态写入数据库。
+9. App 不包含任何 Web 前端依赖。
+10. 核心功能仍然可以通过 CLI 使用。
+
+本阶段不要做：
+- 不做复杂打包。
+- 不做多用户系统。
+- 不做云端服务。
+- 不做移动 App。

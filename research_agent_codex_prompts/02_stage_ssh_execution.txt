@@ -1,0 +1,213 @@
+你是 Codex，请基于下面的阶段需求实现一个“Research Agent 自动实验平台”。
+
+总目标：
+- 用户提供科研/实验 idea，系统自动完成计划、代码修改、实验运行、结果解析、评估、报告生成。
+- 第一类任务先支持机器学习小实验，例如“比较一个新激活函数是否优于 ReLU/GELU/SiLU”。
+- 不做 Web 前端，不做浏览器 UI。最终做桌面 App 形式。
+- 允许先 CLI 跑通，再逐步加入桌面 App。
+- LLM 使用 OpenAI-compatible API，优先兼容 Kimi/Moonshot API，但架构要能切换其他模型。
+- API Key 只能从环境变量读取，不能写死在代码里。
+- 支持本地执行和 SSH 远程执行，但先分阶段实现。
+
+核心设计原则：
+1. LLM 负责思考、规划、生成代码、分析、写报告。
+2. Executor 负责真实执行命令，本地/SSH/Docker 后续可以切换。
+3. Tools 负责文件、Shell、Git、日志、图表等能力。
+4. Workflow 负责阶段控制和循环。
+5. Safety 层负责路径、命令、预算、YOLO 权限限制。
+6. Storage 层负责实验历史、日志、artifact、checkpoint。
+7. Desktop App 只作为 UI，不要把业务逻辑写死在 UI 里。
+
+推荐技术栈：
+- Python 3.11+
+- pydantic v2
+- PyYAML
+- python-dotenv
+- openai SDK，用于 OpenAI-compatible API
+- typer + rich，用于 CLI
+- pytest，用于测试
+- paramiko 或 asyncssh，用于 SSH 阶段
+- SQLAlchemy + SQLite，用于存储阶段
+- pandas / matplotlib，用于日志分析和图表
+- PySide6，用于桌面 App 阶段
+
+仓库根目录建议：
+research-agent/
+├── README.md
+├── pyproject.toml
+├── .env.example
+├── configs/
+│   ├── default.yaml
+│   ├── safety.yaml
+│   ├── llm_profiles.yaml
+│   ├── execution_local.yaml
+│   ├── execution_ssh.yaml
+│   └── tasks/
+│       ├── activation_function.yaml
+│       ├── optimizer_ablation.yaml
+│       └── loss_function.yaml
+├── apps/
+│   ├── cli/
+│   │   └── main.py
+│   └── desktop/
+│       ├── main.py
+│       ├── windows/
+│       ├── widgets/
+│       ├── viewmodels/
+│       └── resources/
+├── research_agent/
+│   ├── core/
+│   ├── llm/
+│   ├── agents/
+│   ├── workflows/
+│   ├── tools/
+│   ├── executors/
+│   ├── experiments/
+│   ├── safety/
+│   ├── storage/
+│   └── templates/
+├── workspace/
+│   ├── repos/
+│   ├── runs/
+│   ├── logs/
+│   ├── artifacts/
+│   └── reports/
+├── scripts/
+└── tests/
+
+全局限制：
+- 不实现 Web 前端，不创建 React/Vue/Vite Web 项目。
+- 不把 API Key、SSH 密码、私钥内容写入代码或配置模板。
+- 不允许默认执行危险命令。
+- 任何自动执行命令都必须经过 SafetyPolicy。
+- 所有输出文件要写入 workspace/runs/<run_id>/ 下，便于复现。
+- 代码要模块化，不要写成一个大脚本。
+
+
+====================
+阶段 2：SSH 远程执行 + 本地/远程统一 Executor
+====================
+
+前置条件：
+阶段 1 已完成，CLI + 本地执行可以跑通。
+
+本阶段目标：
+在不改变 Agent 和 Workflow 逻辑的前提下，加入 SSH 远程执行能力。用户只需要切换 execution config，就可以选择在本地跑或远程 GPU 服务器跑。
+
+必须实现：
+research_agent/executors/ssh_executor.py
+research_agent/executors/factory.py
+research_agent/tools/ssh_tools.py
+research_agent/experiments/sync.py
+configs/execution_ssh.yaml
+对应测试：tests/test_ssh_executor.py、tests/test_executor_factory.py
+
+核心原则：
+1. 上层 Workflow 不应该知道命令到底在本地还是远程执行。
+2. LocalExecutor 和 SSHExecutor 必须实现同一个 Executor 接口。
+3. SSHExecutor 需要支持命令执行、读文件、写文件、列目录、检查路径是否存在。
+4. 所有远程路径仍然要经过 SafetyPolicy 检查。
+5. 不要把 SSH 密码或私钥内容写入配置。只支持 key_path 或从 ssh-agent 使用密钥。
+
+Executor 接口补充：
+在 research_agent/executors/base.py 中确保有这些方法：
+- run(command: str, cwd: str, timeout: int | None, env: dict | None) -> CommandResult
+- read_file(path: str) -> str
+- write_file(path: str, content: str) -> None
+- exists(path: str) -> bool
+- list_dir(path: str) -> list[str]
+- make_dirs(path: str) -> None
+- upload_file(local_path: str, remote_path: str) -> None
+- download_file(remote_path: str, local_path: str) -> None
+
+SSH 配置示例：
+execution:
+  backend: ssh
+  ssh:
+    host: gpu-server
+    port: 22
+    username: your_username
+    key_path: ~/.ssh/id_rsa
+    remote_workspace_root: /home/your_username/research-agent-workspace
+    remote_repo_path: /home/your_username/research-agent-workspace/repos/activation-exp
+    python_bin: /home/your_username/miniconda3/envs/exp/bin/python
+    connect_timeout_seconds: 20
+  environment:
+    CUDA_VISIBLE_DEVICES: "0"
+  limits:
+    command_timeout_seconds: 3600
+    max_parallel_jobs: 1
+    max_total_runtime_seconds: 28800
+  sync:
+    mode: remote_existing_repo
+    # 可选模式：
+    # remote_existing_repo：远程已经有 repo，只在远程执行。
+    # upload_local_repo：把本地 repo 同步到远程 workspace。
+    # clone_remote_repo：远程根据 git_url clone。
+    git_url: ""
+    branch: "main"
+
+实现 SSHExecutor：
+- 建议第一版用 paramiko。
+- 支持 key_path 展开 ~。
+- 执行命令时需要 cd 到 cwd。
+- 环境变量需要注入，例如 CUDA_VISIBLE_DEVICES。
+- stdout/stderr 要完整返回，并保存到本地 workspace/runs/<run_id>/logs/。
+- 命令超时需要终止远程命令或关闭 channel。
+- 连接失败时给出清晰错误。
+
+命令构造注意：
+- 不要简单拼接未转义字符串导致命令注入。
+- cwd 和 command 都要经过 SafetyPolicy。
+- 远程命令可以包装为：
+  cd <safe_cwd> && export KEY=VALUE && <command>
+- 需要对路径做 shlex.quote。
+
+同步策略：
+第一版至少实现 remote_existing_repo。
+- 用户在 execution_ssh.yaml 指定 remote_repo_path。
+- Workflow 直接在 remote_repo_path 下执行命令。
+
+可选实现 upload_local_repo：
+- 将本地 repo 复制到 remote_workspace_root/repos/<repo_name>。
+- 排除 .git、大型缓存、__pycache__、.venv、wandb、runs、logs。
+
+Artifact 同步：
+- 实验完成后，将远程的日志、metrics、plots、reports 下载到本地 workspace/runs/<run_id>/。
+- 如果下载失败，不要让整体崩溃，记录 warning。
+
+ExecutorFactory：
+根据配置生成 executor。
+- backend: local -> LocalExecutor
+- backend: ssh -> SSHExecutor
+- 后续可扩展 docker -> DockerExecutor
+
+CLI 改造：
+同一条命令支持切换执行配置：
+python -m apps.cli.main run --task-config ... --execution-config configs/execution_local.yaml
+python -m apps.cli.main run --task-config ... --execution-config configs/execution_ssh.yaml
+
+Plan/Coder 注意：
+- Planner 需要知道当前是 local 还是 ssh，但只用于生成合理命令。
+- 不要让 LLM 直接写 SSH 登录命令。
+- 远程执行由 SSHExecutor 管理，不允许模型输出 ssh user@host ... 来执行。
+
+安全要求：
+- 禁止访问 ~/.ssh 内容。
+- 禁止模型读取 key_path 对应的私钥内容。
+- SSH 私钥只供 paramiko 连接使用。
+- 远程 workspace_root 之外的写操作默认禁止。
+- 支持 allowed_remote_roots。
+
+验收标准：
+1. LocalExecutor 原有流程不受影响。
+2. execution_ssh.yaml 配置正确时，可以在远程执行 echo、python --version、训练命令。
+3. Workflow 不需要针对 SSH 写 if/else 业务逻辑，只通过 Executor 接口调用。
+4. 远程 stdout/stderr 会同步到本地 run logs。
+5. SSH 连接失败、路径不存在、命令超时都有明确错误。
+6. pytest 覆盖 executor factory、SSH 命令构造、安全检查；真实 SSH 测试可以标记为 integration。
+
+本阶段不要做：
+- 不做桌面 App。
+- 不做 Web。
+- 不做数据库持久化，继续用文件保存状态即可。

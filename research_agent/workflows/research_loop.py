@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
+from uuid import uuid4
 
 from research_agent.agents.analyzer_agent import AnalyzerAgent
 from research_agent.agents.coder_agent import CoderAgent
@@ -46,11 +48,13 @@ class ResearchWorkflow:
 
     def run(self) -> ResearchState:
         run_root = (self.base_dir / self.execution_config.local.workspace_root / "runs").resolve()
+        run_id = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-") + uuid4().hex[:8]
         state = ResearchState(
+            run_id=run_id,
             task_name=self.task_config.task_name,
             idea=self.task_config.idea,
             repo_path=str((self.base_dir / self.task_config.repo_path).resolve()),
-            run_dir=str(run_root / ResearchState.model_fields["run_id"].default_factory()),
+            run_dir=str(run_root / run_id),
         )
         run_dir = Path(state.run_dir)
         artifacts = ArtifactManager(run_dir)

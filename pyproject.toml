@@ -19,6 +19,17 @@ dependencies = [
 [project.scripts]
 research-agent = "apps.cli.main:app"
 
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["research_agent*", "apps*"]
+exclude = ["configs*", "workspace*", "research_agent_codex_prompts*", "scripts*", "tests*"]
+
+[tool.setuptools.package-data]
+"research_agent.llm" = ["prompts/*.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

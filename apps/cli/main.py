@@ -24,6 +24,11 @@ app = typer.Typer(help="Local-first Research Agent MVP")
 console = Console()
 
 
+@app.callback()
+def main() -> None:
+    """Research Agent command group."""
+
+
 @app.command()
 def run(
     task_config: Path = typer.Option(Path("configs/tasks/activation_function.yaml"), help="Task YAML path"),

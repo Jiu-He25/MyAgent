@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import os
 
-from openai import OpenAI
-
 from research_agent.core.config import LLMProfile
 from research_agent.core.errors import ConfigError, LLMError
 from research_agent.core.schemas import LLMMessage
@@ -22,6 +20,10 @@ class OpenAICompatibleClient(LLMClient):
                 f"Missing API key environment variable: {profile.api_key_env}. "
                 "Set it in your shell or use --fake-llm for local tests."
             )
+        try:
+            from openai import OpenAI
+        except ImportError as exc:
+            raise ConfigError("The openai package is not installed. Run scripts\\setup_env.ps1 first.") from exc
         self.profile = profile
         self.client = OpenAI(api_key=api_key, base_url=profile.base_url)
 

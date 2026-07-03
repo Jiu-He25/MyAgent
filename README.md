@@ -12,8 +12,22 @@ Stage 1 focuses on:
 
 ## Quick Start
 
+Create and use the project-local Python environment:
+
 ```powershell
-python -m apps.cli.main run `
+.\scripts\setup_env.ps1
+```
+
+Run tests with the project-local interpreter:
+
+```powershell
+.\scripts\run_tests.ps1
+```
+
+Run the fake-LLM smoke workflow:
+
+```powershell
+.\scripts\run_cli.ps1 run `
   --task-config configs/tasks/activation_function.yaml `
   --llm-config configs/llm_profiles.yaml `
   --execution-config configs/execution_local.yaml `
@@ -26,7 +40,7 @@ For real LLM calls, set `KIMI_API_KEY` in your environment and omit `--fake-llm`
 
 ```powershell
 $env:KIMI_API_KEY="..."
-python -m apps.cli.main run --auto-approve
+.\scripts\run_cli.ps1 run --auto-approve
 ```
 
 All logs, state snapshots, artifacts, and reports are written under `workspace/runs/<run_id>/`.

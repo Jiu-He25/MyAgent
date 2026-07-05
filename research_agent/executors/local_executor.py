@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -29,6 +30,9 @@ class LocalExecutor(Executor):
         self.safety.validate_command(command, cwd=run_cwd, timeout_seconds=timeout)
         env = os.environ.copy()
         env.update(self.config.environment)
+        python_dir = str(Path(sys.executable).parent)
+        env["PATH"] = os.pathsep.join([python_dir, env.get("PATH", "")])
+        env.setdefault("PYTHON_BIN", self.config.local.python_bin)
         started = time.monotonic()
         proc = subprocess.run(
             command,

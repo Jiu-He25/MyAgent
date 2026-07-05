@@ -2,6 +2,8 @@ execution:
   backend: local
   local:
     workspace_root: ./workspace
+    # The CLI overwrites this with task.project.repo_path.
+    # Keep it aligned when using LocalExecutor directly.
     repo_path: ./workspace/repos/activation-exp
     python_bin: python
   environment:

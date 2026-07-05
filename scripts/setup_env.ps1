@@ -8,4 +8,5 @@ if (-not (Test-Path $Python)) {
 }
 
 & $Python -m pip install --upgrade pip
-& $Python -m pip install -e $ProjectRoot
+& $Python -m pip install -r (Join-Path $ProjectRoot "requirements.txt")
+& $Python -m pip install -e $ProjectRoot --no-deps

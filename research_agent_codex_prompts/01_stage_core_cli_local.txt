@@ -5,7 +5,7 @@
 - 第一类任务先支持机器学习小实验，例如“比较一个新激活函数是否优于 ReLU/GELU/SiLU”。
 - 不做 Web 前端，不做浏览器 UI。最终做桌面 App 形式。
 - 允许先 CLI 跑通，再逐步加入桌面 App。
-- LLM 使用 OpenAI-compatible API，优先兼容 Kimi/Moonshot API，但架构要能切换其他模型。
+- LLM 使用 OpenAI-compatible API，默认配置可以给出一个具体供应商示例，但架构和环境变量命名不能绑定某个模型供应商。
 - API Key 只能从环境变量读取，不能写死在代码里。
 - 支持本地执行和 SSH 远程执行，但先分阶段实现。
 
@@ -164,7 +164,7 @@ python -m apps.cli.main run \
 
 配置文件要求：
 1. configs/llm_profiles.yaml
-需要支持 planner、coder、analyzer、reviewer、reporter 五类 profile。现在都可以指向同一个 Kimi API。
+需要支持 planner、coder、analyzer、reviewer、reporter 五类 profile。现在都可以指向同一个 OpenAI-compatible API，也可以分别配置不同模型或供应商。
 
 示例：
 llm_profiles:
@@ -172,35 +172,35 @@ llm_profiles:
     provider: openai_compatible
     model: kimi-k2-code
     base_url: https://api.moonshot.cn/v1
-    api_key_env: KIMI_API_KEY
+    api_key_env: RESEARCH_AGENT_LLM_API_KEY
     temperature: 0.2
     max_tokens: 4096
   coder:
     provider: openai_compatible
     model: kimi-k2-code
     base_url: https://api.moonshot.cn/v1
-    api_key_env: KIMI_API_KEY
+    api_key_env: RESEARCH_AGENT_LLM_API_KEY
     temperature: 0.0
     max_tokens: 8192
   analyzer:
     provider: openai_compatible
     model: kimi-k2-code
     base_url: https://api.moonshot.cn/v1
-    api_key_env: KIMI_API_KEY
+    api_key_env: RESEARCH_AGENT_LLM_API_KEY
     temperature: 0.0
     max_tokens: 4096
   reviewer:
     provider: openai_compatible
     model: kimi-k2-code
     base_url: https://api.moonshot.cn/v1
-    api_key_env: KIMI_API_KEY
+    api_key_env: RESEARCH_AGENT_LLM_API_KEY
     temperature: 0.0
     max_tokens: 4096
   reporter:
     provider: openai_compatible
     model: kimi-k2-code
     base_url: https://api.moonshot.cn/v1
-    api_key_env: KIMI_API_KEY
+    api_key_env: RESEARCH_AGENT_LLM_API_KEY
     temperature: 0.3
     max_tokens: 8192
 
@@ -323,7 +323,7 @@ Safety：
 
 验收标准：
 1. 可以运行 CLI 命令启动一次本地任务。
-2. 可以读取 Kimi/OpenAI-compatible API Key。
+2. 可以读取 OpenAI-compatible API Key，且环境变量名称不绑定具体供应商。
 3. 如果没有 API Key，给出清晰错误信息。
 4. Planner 可以生成 plan 文件。
 5. 用户确认后可以执行实验命令。

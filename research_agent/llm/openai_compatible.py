@@ -23,7 +23,9 @@ class OpenAICompatibleClient(LLMClient):
         try:
             from openai import OpenAI
         except ImportError as exc:
-            raise ConfigError("The openai package is not installed. Run scripts\\setup_env.ps1 first.") from exc
+            raise ConfigError(
+                "The openai package is not installed. Run scripts/setup_env.sh or scripts\\setup_env.ps1 first."
+            ) from exc
         self.profile = profile
         self.client = OpenAI(api_key=api_key, base_url=profile.base_url)
 

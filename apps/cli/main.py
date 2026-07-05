@@ -43,6 +43,7 @@ def run(
     task = load_task_config(task_config)
     llms = load_llm_profiles(llm_config)
     execution = load_execution_config(execution_config).execution
+    execution.local.repo_path = task.repo_path
     safety = load_safety_config(safety_config).safety
     policy = SafetyPolicy(safety, base_dir=base_dir)
     executor = LocalExecutor(execution, policy, base_dir=base_dir)
